@@ -1,6 +1,7 @@
 import tkinter as tk
 import tempfile 
 import os
+import json #bu geçmiş çevirileri arka planda tutmak için alındı
 from datetime import datetime #zaman ekleme
 from PIL import Image, ImageTk
 from tkinter import ttk
@@ -8,6 +9,7 @@ from playsound import playsound
 from PIL import Image, ImageTk
 from gtts import gTTS  # bu satırda da text to speech (konuşma) kütüphane ekleme
 from deep_translator import GoogleTranslator # google translate import ekleme
+
 
 tts_languages = { # destekli diller fonksiyonu
     "Turkish": "tr",
@@ -23,6 +25,7 @@ tts_languages = { # destekli diller fonksiyonu
     "Chinese (Simplified)": "zh-CN",
 }
 
+history_file = "history_data.json"
 
 # Translator örneği ile desteklenen dilleri al
 translator = GoogleTranslator(source='auto', target='en')
@@ -32,6 +35,28 @@ raw_languages = translator.get_supported_languages(as_dict=True)
 # Baş harfleri büyük yap, Otomatik Algıla ekle
 readable_to_code = {"Otomatik Algıla": "auto"}
 readable_to_code.update({lang.title(): code for lang, code in raw_languages.items()})
+
+#burası geçmiş çevirileri kalıcı kaydetme satırları
+def load_history():
+    global history_data
+    if os.path.exists(history_file):
+        try:
+            with open(history_file, "r", encoding="utf-8") as f:
+                history_data = json.load(f)
+        except:
+            history_data = []
+    else:
+        history_data = []
+
+
+def save_history():
+    with open(history_file, "w", encoding="utf-8") as f:
+        json.dump(history_data, f, ensure_ascii=False, indent=2)
+
+#uygulama başlatıldıgında yuklenır
+load_history()
+
+
 
 def get_language_names_with_icons():
     names = []
@@ -258,13 +283,13 @@ view_button.image = view_icon
 view_button.pack(side="left", padx=5)
 
 # geçmişi görme button
-history_button = tk.Button(icon_bar2, image=history_icon, command=lambda: toggle_history_panel(),
+history_button = tk.Button(icon_bar2, image=history_icon, command=lambda: toggle_history(),
                            bg="#303134", bd=0, activebackground="#303134")
 history_button.image = history_icon
 history_button.pack(side="right", padx=5)
 
 # GEÇMİŞ ÇEVİRİLERİ GÖRME fonksiyonu
-def toggle_history_panel():
+def toggle_history():
     global history_visible
     if history_visible:
         history_frame.place(x=1510, y=0) #burada gizle
@@ -280,19 +305,37 @@ def refresh_history():
     for widget in history_frame.winfo_children():
         widget.destroy()
 
+    #scroll destekli canvas bu sayade artık çeviriler aşagıya kaydırılabilecek ve görünümde yeni seviye
+    #ayrıca daha rahat bir kullanım
+    canvas = tk.Canvas(history_frame, bg="#303134", bd=0, highlightthickness=0)
+    scrollbar = tk.Scrollbar(history_frame, orient="vertical", command=canvas.yview)
+    scroll_frame = tk.Frame(canvas, bg="#303134")
+
+    scroll_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+
+    canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+
     # Başlık ve X tuşu
-    title_frame = tk.Frame(history_frame, bg="#303134")
+    title_frame = tk.Frame(scroll_frame, bg="#303134")
     title_frame.pack(fill="x", pady=(10, 0), padx=10)
 
     title = tk.Label(title_frame, text="Geçmiş Çeviriler", bg="#303134", fg="white", font=("Arial", 12, "bold"))
     title.pack(side="left")
 
-    close_btn = tk.Button(title_frame, text="X", command=toggle_history_panel,
+    close_btn = tk.Button(title_frame, text="X", command=toggle_history,
                           bg="#303134", fg="white", bd=0, font=("Arial", 12))
     close_btn.pack(side="right")
 
     for idx, item in enumerate(history_data):
-        frame = tk.Frame(history_frame, bg="#303134", padx=5, pady=5)
+        frame = tk.Frame(scroll_frame, bg="#303134", padx=5, pady=5)
         frame.pack(fill="x", padx=5, pady=3)
 
         text_label = tk.Label(frame,
@@ -303,12 +346,28 @@ def refresh_history():
         timestamp_label = tk.Label(frame, text=item["timestamp"], fg="gray", bg="#303134", font=("Arial", 8))
         timestamp_label.grid(row=1, column=0, sticky="w", columnspan=3)
 
-                 
+    # mouse ile kaydırma desteği ekleme (for windows)
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    canvas.bind_all("<MouseWheel>", _on_mousewheel)
+    
+
+    clear_btn = tk.Button(scroll_frame, text="Geçmişi Temizle", command=clear_history,
+                      bg="#303134", fg="white", font=("Arial", 10), bd=0)
+    clear_btn.pack(pady=5)
 
 is_saved = False # burada ilk başta normal içi boş yıldız
 history_visible = False  # panel açık mı
-history_data = []   
-history_frame = None  # panel frame için global referans
+load_history() #burada geçmiş çeviriler otomatik kaydedilir
+
+#geçmişi temizleme butonu işlevi
+def clear_history():
+    global history_data
+    history_data = []
+    save_history()
+    refresh_history()
+
 
 # çeviriyi kaydet fonksiyonu
 def save_translation():
@@ -348,7 +407,7 @@ def save_translation():
 
     root.after(2000, lambda: status_label.config(text=""))
 
-
+    save_history()
 
 
 def toggle_saved_panel():
@@ -440,6 +499,12 @@ def perform_translation():
         output_box.insert(tk.END, "Çeviri başarısız.")
         output_box.config(state="disabled")
         print("Hata:", e)
+    # Geçmişe ekleme işlemi yapılıyor (her başarılı çeviride)
+    if translated and not any(entry["text"] == translated for entry in history_data):
+        history_data.append({
+        "text": translated,
+        "timestamp": datetime.now().strftime("%d.%m.%Y %H:%M")
+    })
 
 
 
@@ -468,5 +533,7 @@ def limit_input_length(event=None):
     if len(current_text.strip()) > max_chars:
         input_box.delete("1.0" , tk.END)
         input_box.insert("1.0", current_text.strip()[:max_chars])
+
+
 
 root.mainloop() # en sonda mainloop tanımlama
