@@ -1,7 +1,7 @@
 import tkinter as tk
 import tempfile 
 import os
-from datetime import datetime
+from datetime import datetime #zaman ekleme
 from PIL import Image, ImageTk
 from tkinter import ttk
 from playsound import playsound
@@ -258,13 +258,13 @@ view_button.image = view_icon
 view_button.pack(side="left", padx=5)
 
 # geçmişi görme button
-history_button = tk.Button(icon_bar2, image=history_icon, command=lambda: toggle_history(),
+history_button = tk.Button(icon_bar2, image=history_icon, command=lambda: toggle_history_panel(),
                            bg="#303134", bd=0, activebackground="#303134")
 history_button.image = history_icon
 history_button.pack(side="right", padx=5)
 
 # GEÇMİŞ ÇEVİRİLERİ GÖRME fonksiyonu
-def toggle_history():
+def toggle_history_panel():
     global history_visible
     if history_visible:
         history_frame.place(x=1510, y=0) #burada gizle
@@ -287,7 +287,7 @@ def refresh_history():
     title = tk.Label(title_frame, text="Geçmiş Çeviriler", bg="#303134", fg="white", font=("Arial", 12, "bold"))
     title.pack(side="left")
 
-    close_btn = tk.Button(title_frame, text="X", command=toggle_history,
+    close_btn = tk.Button(title_frame, text="X", command=toggle_history_panel,
                           bg="#303134", fg="white", bd=0, font=("Arial", 12))
     close_btn.pack(side="right")
 
@@ -308,6 +308,7 @@ def refresh_history():
 is_saved = False # burada ilk başta normal içi boş yıldız
 history_visible = False  # panel açık mı
 history_data = []   
+history_frame = None  # panel frame için global referans
 
 # çeviriyi kaydet fonksiyonu
 def save_translation():
