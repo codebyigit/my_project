@@ -2,6 +2,7 @@ import tkinter as tk
 import tempfile 
 import os
 import json #bu geçmiş çevirileri arka planda tutmak için alındı
+import pygame #burada playsound yerine pygame kullanıldı
 from datetime import datetime #zaman ekleme
 from PIL import Image, ImageTk
 from tkinter import ttk
@@ -25,7 +26,8 @@ tts_languages = { # destekli diller fonksiyonu
     "Chinese (Simplified)": "zh-CN",
 }
 
-history_file = "history_data.json"
+history_file = "history_data.json" #burada geçmiş çevirilerin tutulacagı dosyayı oluşturduk ve belirttik
+
 
 # Translator örneği ile desteklenen dilleri al
 translator = GoogleTranslator(source='auto', target='en')
@@ -137,6 +139,10 @@ copy_icon = ImageTk.PhotoImage(copy_img)
 theme_img = Image.open("theme_icon.png").resize((22,22))
 theme_icon = ImageTk.PhotoImage(theme_img)
 
+#burada da hız ayarları iconu ekleme
+speed_img = Image.open("settings_icon.png").resize((23, 23))
+speed_icon = ImageTk.PhotoImage(speed_img)
+
 # otomatik konuşma icon ekleme işlevi
 listen_img = Image.open("volume_up.png").resize((24,24))
 listen_icon = ImageTk.PhotoImage(listen_img)
@@ -220,30 +226,92 @@ def copy_to_clipboard():
         status_label.config(text="Çeviri kopyalanamadı", fg="white")
         print("Hata:", e)
 
-# konuşma fonksiyonunu güncelleme kısmı burada
+
+def set_speech_speed(speed):
+    global speech_speed
+    speech_speed = speed
+
+
+# KONUŞMA FONKSİYONU güncelleme kısmı burada
 def speak_translation():
     try:
         text = output_box.get("1.0", tk.END).strip()
         if not text:
             raise ValueError("Boş metin")
 
-        src = readable_to_code[clean_lang_name(source_lang_var.get())]
-        tgt = readable_to_code[clean_lang_name(target_lang_var.get())]
+        lang = readable_to_code[clean_lang_name(target_lang_var.get())]
+        slow = False
 
-        tts_lang = tts_languages.get(clean_lang_name(target_lang_var.get()), "en")
-        tts = gTTS(text=text, lang=tts_lang)
+        if speech_speed == "normal":
+            slow = False
+        elif speech_speed == "slow":
+            slow = True
+        elif speech_speed == "slower":
+            slow = True
+            text = " ".join(text)
 
-        temp_audio = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        temp_audio.close()
-        tts.save(temp_audio.name)
+        # temp dosya oluştur
+        fd, path = tempfile.mkstemp(suffix=".mp3")
+        os.close(fd)  # dosya tanıtıcısını kapat
+        tts = gTTS(text=text, lang=lang, slow=slow)
+        tts.save(path)  # mp3 olarak kaydet
 
-        playsound(temp_audio.name)
-        os.remove(temp_audio.name)
+        # burada direkt olarak sesi çalar
+        pygame.mixer.init()
+        pygame.mixer.music.load(path)
+        pygame.mixer.music.play()
+
+        # sadece bekleme var eger hata yoksa hata mesajı da gosterılmez
+        while pygame.mixer.music.get_busy():
+            pygame.time.Clock().tick(10)
+
+        os.remove(path)  # işi bitince siler
+
 
     except Exception as e:
-        print("Sesli okuma hatası:", e)
-        status_label.config(text="Sesli okuma başarısız", fg="white")
+            print("Sesli okuma hatası:", e)
 
+
+speech_speed = "normal"
+speed_panel_visible = False
+speed_panel = None
+
+def toggle_speed_panel():
+    global speed_panel_visible, speed_panel, speech_speed
+
+    try:
+        if speed_panel_visible:
+            if speed_panel and speed_panel.winfo_exists():
+                speed_panel.destroy()
+            speed_panel = None
+            speed_panel_visible = False
+        else:
+            speed_panel = tk.Frame(root, bg="#2e2e2e", width=200, height=150)
+            speed_panel.place(x=960, y=35)
+
+            tk.Label(speed_panel, text="Konuşma Hızı", font=("Arial", 12),
+                     bg="#2e2e2e", fg="white").pack(pady=10)
+
+            speed_var = tk.StringVar(value=speech_speed)
+
+            def on_speed_change():
+                global speech_speed
+                speech_speed = speed_var.get()
+
+            options = [("normal", "Normal"), ("slow", "Yavaş"), ("slower", "Daha Yavaş")]
+            for val, label in options:
+                tk.Radiobutton(
+                    speed_panel, text=label, variable=speed_var, value=val,
+                    command=on_speed_change, bg="#2e2e2e", fg="white",
+                    selectcolor="#424242", font=("Arial", 10),
+                    activebackground="#2e2e2e", anchor="w"
+                ).pack(anchor="w", padx=20)
+
+            speed_panel_visible = True
+
+    except Exception as e:
+        print("Hız paneli hatası:", e)
+   
 
 
 icon_bar = tk.Frame(root, bg="#303134", width=100, height=35)
@@ -254,9 +322,18 @@ icon_bar2 = tk.Frame(root, bg="#303134", width=100, height=35)
 icon_bar2.pack_propagate(False)
 icon_bar2.place(x=240, y=330)
 
+#tema butonu ekleme
 theme_button = tk.Button(icon_bar, image=theme_icon, command=toggle_theme, bg="#303134", bd=0, activebackground="#303134")
 theme_button.image = theme_icon # burada referans tutuluyor
 theme_button.pack(side="left", padx=5)
+
+
+#hız butonu ekleme(ayarlar)
+speed_button = tk.Button(icon_bar, image=speed_icon, command=toggle_speed_panel,
+                         bg="#303134", bd=0, activebackground="#303134")
+speed_button.image = speed_icon
+speed_button.pack(side="right", padx=5)
+
 
 #kopyalama icon butonu ekleme
 copy_button = tk.Button(output_frame, image=copy_icon, command=copy_to_clipboard,
@@ -331,12 +408,18 @@ def refresh_history():
     title.pack(side="left")
 
     close_btn = tk.Button(title_frame, text="X", command=toggle_history,
-                          bg="#303134", fg="white", bd=0, font=("Arial", 12))
+                          bg="#303134", fg="white", bd=0, font=("Arial", 12), activebackground="#303134")
     close_btn.pack(side="right")
 
     for idx, item in enumerate(history_data):
         frame = tk.Frame(scroll_frame, bg="#303134", padx=5, pady=5)
         frame.pack(fill="x", padx=5, pady=3)
+
+        def delete_entry(index=idx):
+            del history_data[index]
+            save_history()
+            refresh_history()
+
 
         text_label = tk.Label(frame,
             text=item["text"][:25] + ("..." if len(item["text"]) > 25 else ""),
@@ -345,6 +428,36 @@ def refresh_history():
 
         timestamp_label = tk.Label(frame, text=item["timestamp"], fg="gray", bg="#303134", font=("Arial", 8))
         timestamp_label.grid(row=1, column=0, sticky="w", columnspan=3)
+
+
+        #silme butonu (sağ tıklayınca Sil seçeneğinin görüntulenmesı)
+        delete_btn = tk.Label(frame, text="Sil", fg="white", bg="#303134", cursor="hand2", font=("Arial", 8))
+        delete_btn.grid(row=0, column=2, padx=5)
+        delete_btn.bind("<Button-1>", lambda e, index=idx: delete_entry(index))
+        delete_btn.grid_remove() #burada başta gizli olarak ayarlı
+
+        hide_id = {"job": None} #gecikmelı gızleme ıcın after_id aldım
+
+        #üzerine gelince gösterir
+        def on_enter(e):
+            if hide_id["job"]:
+                frame.after_cancel(hide_id["job"])
+                hide_id["job"] = None
+                delete_btn.grid()
+
+        def on_leave(e):
+            def hide():
+                delete_btn.grid_remove()
+                hide_id["job"] = None
+            hide_id["job"] = frame.after(200, hide) # 200ms GECIKME eklendı bu sayede üzerine gelınce kafayı yemez
+
+        
+        #her ogeye aynı eventı baglıyorum kı gecikme olmasın
+        widgets = [frame, text_label, timestamp_label, delete_btn]
+        for w in widgets:
+            w.bind("<Enter>", on_enter)
+            w.bind("<Leave>", on_leave)
+
 
     # mouse ile kaydırma desteği ekleme (for windows)
     def _on_mousewheel(event):
@@ -418,19 +531,19 @@ def toggle_saved_panel():
             saved_panel.destroy()
         is_saved_panel_open = False
     else:
-        saved_panel = tk.Frame(root, bg="#303134", width=150, height=360)
-        saved_panel.place(x=1210, y=0)  # sağdan açılma
+        saved_panel = tk.Frame(root, bg="#303134", width=170, height=360)
+        saved_panel.place(x=1190, y=0)  # sağdan açılma
         saved_panel.pack_propagate(False)
 
         # Başlık ve kapatma tuşu
         top_bar = tk.Frame(saved_panel, bg="#303134", height=25)
         top_bar.pack(fill="x")
 
-        title = tk.Label(top_bar, text="Kaydedilenler", bg="#303134", fg="white", font=("Arial", 10, "bold"))
-        title.pack(side="left", padx=10)
+        title = tk.Label(top_bar, text="Kaydedilenler", bg="#303134", fg="white", font=("Arial", 11, "bold"))
+        title.pack(side="left", padx=5, pady=10)
 
-        close_btn = tk.Button(top_bar, text="X", command=toggle_saved_panel, bg="#1e1e1e", fg="white", bd=0)
-        close_btn.pack(side="right", padx=5)
+        close_btn = tk.Button(top_bar, text="X", command=toggle_saved_panel, bg="#303134", fg="white", bd=0, font=("Arial", 11), activebackground="#303134")
+        close_btn.pack(side="right", padx=10, pady=5)
 
         # Liste alanı
         list_box = tk.Text(saved_panel, bg="#303134", fg="white", wrap="word",
@@ -535,5 +648,10 @@ def limit_input_length(event=None):
         input_box.insert("1.0", current_text.strip()[:max_chars])
 
 
+def on_closing():
+    save_history()
+    root.destroy()
 
-root.mainloop() # en sonda mainloop tanımlama
+root.protocol("WM_DELETE_WİNDOW", on_closing)
+
+root.mainloop() # en sonda mainloop tanımlıyoruz
