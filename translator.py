@@ -10,7 +10,9 @@ from playsound import playsound
 from PIL import Image, ImageTk
 from gtts import gTTS  # bu satırda da text to speech (konuşma) kütüphane ekleme
 from deep_translator import GoogleTranslator # google translate import ekleme
-
+from tkinter import filedialog #buda pdf,txt gibi dosyaları açar ve çevirir
+from docx import Document #burada pdf,txt gibi dosyalar için çeviri işlemi
+import fitz #pdf açması için
 
 tts_languages = { # destekli diller fonksiyonu
     "Turkish": "tr",
@@ -57,7 +59,6 @@ def save_history():
 
 #uygulama başlatıldıgında yuklenır
 load_history()
-
 
 
 def get_language_names_with_icons():
@@ -176,6 +177,9 @@ history_icon = Image.open("history_icon.png").resize((24, 24))
 history_icon = ImageTk.PhotoImage(history_icon)
 
 
+file_export_img = Image.open("file_export.png").resize((24, 24))
+file_export_icon = ImageTk.PhotoImage(file_export_img)
+
 current_theme = "dark" # referans renk dark|koyu olarak belirtildi
 # tema ekleme/yenileme ve değiştirme işlemleri burada
 def toggle_theme():
@@ -271,7 +275,6 @@ def speak_translation():
     except Exception as e:
             print("Sesli okuma hatası:", e)
 
-
 speech_speed = "normal"
 speed_panel_visible = False
 speed_panel = None
@@ -312,7 +315,6 @@ def toggle_speed_panel():
     except Exception as e:
         print("Hız paneli hatası:", e)
    
-
 
 icon_bar = tk.Frame(root, bg="#303134", width=100, height=35)
 icon_bar.pack_propagate(False)
@@ -365,6 +367,7 @@ history_button = tk.Button(icon_bar2, image=history_icon, command=lambda: toggle
 history_button.image = history_icon
 history_button.pack(side="right", padx=5)
 
+
 # GEÇMİŞ ÇEVİRİLERİ GÖRME fonksiyonu
 def toggle_history():
     global history_visible
@@ -375,7 +378,6 @@ def toggle_history():
         history_frame.place(x=1190, y=0)
         refresh_history()
         history_visible = True
-
 
 
 def refresh_history():
@@ -558,7 +560,6 @@ def toggle_saved_panel():
 
         is_saved_panel_open = True
 
-
 def refresh_saved_panel():
     if is_saved_panel_open:
         toggle_saved_panel() # burada önce kapat
@@ -592,7 +593,6 @@ def trigger_translation():
     after_id = root.after(500, perform_translation)
 
 
-
 def perform_translation():
     text = input_box.get("1.0", tk.END).strip()
     if not text:
@@ -619,6 +619,44 @@ def perform_translation():
         "timestamp": datetime.now().strftime("%d.%m.%Y %H:%M")
     })
 
+#DOSYALARDAN ÇEVİRİ YAPMA fonksiyonu
+def read_txt(file_path): #txt belgeleri okur
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+def read_docx(file_path): #docx belgeleri okur
+    doc = Document(file_path)
+    return "\n".join(p.text for p in doc.paragraphs)
+
+def read_pdf(file_path):
+    text = ""
+    pdf = fitz.open(file_path)
+    for page in pdf:
+        text += page.get_text()
+    return text
+
+def open_file_and_translate():
+    file_path = filedialog.askopenfilename(filetypes=[("Metin Dosyaları", "*.txt *.docx *.pdf")])
+    if not file_path:
+        return
+    
+    if file_path.endswith(".txt"):
+        content = read_txt(file_path)
+    elif file_path.endswith(".docx"):
+        content = read_docx(file_path)
+    elif file_path.endswith(".pdf"):
+        content = read_pdf(file_path)
+    else:
+        status_label.config("Desteklenmeyen Dosya", fg="red")
+        return
+    
+    input_box.delete("1.0", tk.END)
+    input_box.insert("1.0", content)
+    trigger_translation()
+
+file_export_button = tk.Button(icon_bar2, image=file_export_icon, command=open_file_and_translate, bg="#303134", bd=0)
+file_export_button.image = file_export_icon
+file_export_button.pack(anchor="center", pady=4)
 
 
 # karakter sayacı kodları buradan başlıyor
@@ -646,7 +684,6 @@ def limit_input_length(event=None):
     if len(current_text.strip()) > max_chars:
         input_box.delete("1.0" , tk.END)
         input_box.insert("1.0", current_text.strip()[:max_chars])
-
 
 def on_closing():
     save_history()
